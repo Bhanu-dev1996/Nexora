@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="NovaCRM API",
+    title="Nexora API",
     version="1.0.0",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
@@ -38,4 +38,4 @@ app.include_router(api_router)
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "service": "novacrm-api", "version": "1.0.0"}
+    return {"status": "ok", "service": "nexora-api", "version": "1.0.0"}

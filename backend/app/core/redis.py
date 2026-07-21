@@ -13,10 +13,10 @@ async def connect_redis():
     try:
         redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
         await redis_client.ping()
-        print("✅ Redis connected")
+        print("[OK] Redis connected")
     except Exception as e:
         redis_client = None
-        print(f"⚠️  Redis unavailable ({e}) — rate limiting & caching disabled")
+        print(f"[WARN] Redis unavailable ({e}) - rate limiting & caching disabled")
 
 
 async def disconnect_redis():
@@ -24,7 +24,7 @@ async def disconnect_redis():
     if redis_client:
         await redis_client.close()
         redis_client = None
-        print("🔌 Redis disconnected")
+        print("[OK] Redis disconnected")
 
 
 def get_redis() -> redis.Redis:
@@ -34,7 +34,7 @@ def get_redis() -> redis.Redis:
 
 
 class Cache:
-    PREFIX = "novacrm:"
+    PREFIX = "nexora:"
 
     @staticmethod
     async def get(key: str) -> Optional[Any]:

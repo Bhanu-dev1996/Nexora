@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.config import settings
+from app.core.email import send_password_reset_email, send_verification_email
 from app.core.errors import AppError
 from app.core.redis import Cache
 from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
@@ -16,11 +17,14 @@ from app.models.user import User
 from app.models.user_organization import UserOrganization
 from app.schemas.auth import (
     AuthResponse,
+    ForgotPasswordRequest,
     LoginRequest,
     RefreshTokenRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UserResponse,
+    VerifyEmailRequest,
 )
 from app.schemas.common import APIResponse
 from app.utils.helpers import slugify
@@ -60,7 +64,7 @@ async def register(body: RegisterRequest, request: Request, db: AsyncSession = D
         raise AppError.conflict("An account with this email already exists")
 
     password_hash = hash_password(body.password)
-    user = User(email=body.email.lower(), password_hash=password_hash, first_name=body.firstName, last_name=body.lastName)
+    user = User(email=body.email.lower(), password_hash=password_hash, first_name=body.firstName, last_name=body.lastName, is_active=False)
     db.add(user)
     await db.flush()
 
@@ -71,19 +75,11 @@ async def register(body: RegisterRequest, request: Request, db: AsyncSession = D
     user_org = UserOrganization(user_id=user.id, organization_id=org.id, role="organization_admin", is_default=True)
     db.add(user_org)
     await db.commit()
-    await db.refresh(user)
-    await db.refresh(org)
 
-    permissions = await _get_role_permissions("organization_admin", org.id, db)
-    token = create_access_token(user.id, org.id, "organization_admin", permissions, user.email)
-    refresh = create_refresh_token()
+    verify_token = create_access_token(user.id, org.id, "organization_admin", [], user.email, expires_delta=timedelta(hours=24))
+    send_verification_email(user.email, verify_token)
 
-    return APIResponse(
-        data={
-            "user": {"id": user.id, "email": user.email, "firstName": user.first_name, "lastName": user.last_name, "role": "organization_admin", "organizationId": org.id, "createdAt": user.created_at.isoformat()},
-            "tokens": {"accessToken": token, "refreshToken": refresh, "accessTokenExpiresAt": (datetime.now(timezone.utc).__class__.now(timezone.utc)).isoformat()},
-        }
-    )
+    return APIResponse(data={"message": "Account created! Check your email to verify your account."})
 
 
 @router.post("/login")
@@ -95,6 +91,8 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
     if not user or not verify_password(body.password, user.password_hash):
         raise AppError.unauthorized("Invalid email or password", "INVALID_CREDENTIALS")
 
+    if not user.email_verified_at:
+        raise AppError.unauthorized("Please verify your email before signing in", "EMAIL_NOT_VERIFIED")
     if not user.is_active:
         raise AppError.unauthorized("Account has been deactivated", "ACCOUNT_DEACTIVATED")
 
@@ -119,6 +117,87 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
             "tokens": {"accessToken": token, "refreshToken": refresh, "accessTokenExpiresAt": datetime.now(timezone.utc).isoformat(), "refreshTokenExpiresAt": datetime.now(timezone.utc).isoformat()},
         }
     )
+
+
+@router.post("/verify-email")
+async def verify_email(body: VerifyEmailRequest, db: AsyncSession = Depends(get_db)):
+    from jose import jwt
+    try:
+        payload = jwt.decode(
+            body.token,
+            settings.JWT_ACCESS_SECRET,
+            algorithms=["HS256"],
+            audience="nexora-api",
+            issuer="nexora-api",
+        )
+    except Exception:
+        raise AppError.unauthorized("Invalid or expired verification token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise AppError.unauthorized("Invalid verification token")
+
+    result = await db.execute(select(User).where(User.id == user_id, User.deleted_at == None))
+    user = result.scalars().first()
+    if not user:
+        raise AppError.unauthorized("User not found")
+
+    user.email_verified_at = datetime.now(timezone.utc)
+    user.is_active = True
+    await db.commit()
+
+    return APIResponse(data={"message": "Email verified successfully."})
+
+
+@router.post("/forgot-password")
+async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(User).where(User.email == body.email.lower(), User.deleted_at == None)
+    )
+    user = result.scalars().first()
+    if not user:
+        return APIResponse(data={"message": "If that email exists, a reset link has been sent."})
+
+    reset_token = create_access_token(
+        user.id,
+        "",
+        "reset_password",
+        [],
+        user.email,
+        expires_delta=timedelta(minutes=30),
+    )
+    send_password_reset_email(user.email, reset_token)
+    return APIResponse(data={"message": "If that email exists, a reset link has been sent."})
+
+
+@router.post("/reset-password")
+async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    from jose import jwt
+    try:
+        payload = jwt.decode(
+            body.token,
+            settings.JWT_ACCESS_SECRET,
+            algorithms=["HS256"],
+            audience="nexora-api",
+            issuer="nexora-api",
+        )
+    except Exception:
+        raise AppError.unauthorized("Invalid or expired reset token")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise AppError.unauthorized("Invalid reset token")
+
+    result = await db.execute(select(User).where(User.id == user_id, User.deleted_at == None))
+    user = result.scalars().first()
+    if not user:
+        raise AppError.unauthorized("User not found")
+
+    user.password_hash = hash_password(body.password)
+    user.password_changed_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    return APIResponse(data={"message": "Password has been reset successfully."})
 
 
 @router.post("/refresh-token")

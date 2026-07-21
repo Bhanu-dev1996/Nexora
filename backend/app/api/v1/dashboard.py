@@ -10,7 +10,6 @@ from app.models.contact import Contact
 from app.models.company import Company
 from app.models.deal import Deal
 from app.models.task import Task
-from app.models.user import User
 from app.schemas.common import APIResponse
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -24,8 +23,6 @@ async def get_stats(request: Request, db: AsyncSession = Depends(get_db), _perm=
     cached = await Cache.get(cache_key)
     if cached:
         return APIResponse(data=cached)
-
-    where = {"organization_id": org_id, "deleted_at": None}
 
     total_leads = (await db.execute(select(func.count()).select_from(Lead).where(Lead.organization_id == org_id, Lead.deleted_at == None))).scalar() or 0
     new_leads = (await db.execute(select(func.count()).select_from(Lead).where(Lead.organization_id == org_id, Lead.status == "new"))).scalar() or 0
@@ -53,6 +50,12 @@ async def get_stats(request: Request, db: AsyncSession = Depends(get_db), _perm=
     recent_deals = await db.execute(select(Deal).where(Deal.organization_id == org_id, Deal.deleted_at == None).order_by(Deal.created_at.desc()).limit(5))
     recent_deals_list = [{"id": d.id, "title": d.title, "amount": float(d.amount) if d.amount else None, "stage": d.stage, "status": d.status, "createdAt": d.created_at.isoformat()} for d in recent_deals.scalars().all()]
 
+    recent_contacts = await db.execute(select(Contact).where(Contact.organization_id == org_id, Contact.deleted_at == None).order_by(Contact.created_at.desc()).limit(5))
+    recent_contacts_list = [{"id": c.id, "firstName": c.first_name, "lastName": c.last_name, "email": c.email, "createdAt": c.created_at.isoformat()} for c in recent_contacts.scalars().all()]
+
+    recent_tasks = await db.execute(select(Task).where(Task.organization_id == org_id, Task.deleted_at == None).order_by(Task.created_at.desc()).limit(5))
+    recent_tasks_list = [{"id": t.id, "title": t.title, "status": t.status, "priority": t.priority, "createdAt": t.created_at.isoformat()} for t in recent_tasks.scalars().all()]
+
     response_data = {
         "overview": {
             "totalLeads": total_leads, "newLeads": new_leads, "totalContacts": total_contacts,
@@ -64,6 +67,8 @@ async def get_stats(request: Request, db: AsyncSession = Depends(get_db), _perm=
         "dealsByStage": deals_by_stage_list,
         "recentLeads": recent_leads_list,
         "recentDeals": recent_deals_list,
+        "recentContacts": recent_contacts_list,
+        "recentTasks": recent_tasks_list,
     }
 
     await Cache.set(cache_key, response_data, ttl=120)

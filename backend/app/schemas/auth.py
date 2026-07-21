@@ -61,6 +61,31 @@ class UserResponse(BaseModel):
     permissions: Optional[list] = None
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v):
+        if len(v) < 8 or len(v) > 128:
+            raise ValueError("Password must be 8-128 characters")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain an uppercase letter")
+        if not re.search(r"[a-z]", v):
+            raise ValueError("Password must contain a lowercase letter")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain a number")
+        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
+            raise ValueError("Password must contain a special character")
+        return v
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
 class AuthResponse(BaseModel):
     user: UserResponse
     tokens: TokenResponse

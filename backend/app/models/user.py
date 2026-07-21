@@ -10,10 +10,11 @@ class User(Base):
 
     id = Column(String(36), primary_key=True, default=gen_uuid)
     email = Column(String(255), unique=True, nullable=False, index=True)
-    password_hash = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     avatar_url = Column(Text, nullable=True)
+    google_id = Column(String(255), nullable=True, unique=True)
     phone = Column(String(20), nullable=True)
     job_title = Column(String(100), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
