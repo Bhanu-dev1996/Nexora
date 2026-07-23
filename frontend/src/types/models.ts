@@ -39,9 +39,19 @@ export interface DashboardStats {
     totalRevenue: number
     totalTasks: number
     pendingTasks: number
+    revenueThisMonth: number
+    revenueLastMonth: number
+    revenueGrowth: number
+    newContactsThisMonth: number
+    leadsToday: number
+    openLeadsCount: number
+    tasksDueToday: number
+    tasksOverdue: number
   }
   leadsByStatus: { status: string; count: number }[]
   dealsByStage: { stage: string; count: number; totalAmount: number }[]
+  dailyLeads: { date: string; count: number }[]
+  dailyRevenue: { date: string; amount: number }[]
   recentLeads: { id: string; firstName: string; lastName: string; status: string; score: number; createdAt: string }[]
   recentDeals: { id: string; title: string; amount: number | null; stage: string; status: string; createdAt: string }[]
   recentContacts: { id: string; firstName: string; lastName: string; email: string; createdAt: string }[]
